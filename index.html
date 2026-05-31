@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EcoMonitor — Calidad del aire en tu ciudad</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --surface: #131920;
+    --surface2: #1a2330;
+    --border: rgba(255,255,255,0.07);
+    --accent: #00e5a0;
+    --accent2: #0099ff;
+    --warn: #ffb800;
+    --danger: #ff4757;
+    --text: #e8edf2;
+    --muted: #6b7f94;
+    --font: 'Space Grotesk', sans-serif;
+    --mono: 'DM Mono', monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:var(--font); min-height:100vh; overflow-x:hidden; }
+
+  header {
+    display:flex; align-items:center; justify-content:space-between;
+    padding:18px 40px; border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:100;
+    background:rgba(11,15,20,0.92); backdrop-filter:blur(12px);
+  }
+  .logo { display:flex; align-items:center; gap:10px; }
+  .logo-icon { width:32px; height:32px; background:var(--accent); border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .logo-text { font-size:17px; font-weight:600; letter-spacing:-0.3px; }
+  .logo-text span { color:var(--accent); }
+  nav { display:flex; gap:4px; }
+  nav a { padding:7px 16px; border-radius:6px; font-size:13px; font-weight:500; color:var(--muted); text-decoration:none; transition:all 0.2s; cursor:pointer; }
+  nav a:hover, nav a.active { color:var(--text); background:var(--surface2); }
+  .header-right { display:flex; align-items:center; gap:12px; }
+  .dot-live { width:7px; height:7px; border-radius:50%; background:var(--accent); animation:pulse 2s ease-in-out infinite; }
+  .status-text { font-size:12px; color:var(--muted); font-family:var(--mono); }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(1.3)} }
+
+  section { display:none; padding:36px 40px; animation:fadeIn 0.3s ease; }
+  section.active { display:block; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+  h2 { font-size:22px; font-weight:600; margin-bottom:6px; }
+  .subtitle { color:var(--muted); font-size:14px; margin-bottom:32px; }
+
+  /* LOADING */
+  .loading {
+    display:flex; align-items:center; justify-content:center;
+    gap:10px; padding:60px; color:var(--muted); font-size:14px;
+  }
+  .spinner {
+    width:18px; height:18px; border:2px solid var(--border);
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin 0.8s linear infinite;
+  }
+  @keyframes spin { to{transform:rotate(360deg)} }
+  .error-msg { padding:20px; color:var(--danger); font-size:13px; font-family:var(--mono); background:rgba(255,71,87,0.08); border-radius:10px; border:1px solid rgba(255,71,87,0.2); }
+
+  /* KPI */
+  .kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:36px; }
+  .kpi-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:22px 24px; position:relative; overflow:hidden; transition:border-color 0.2s; }
+  .kpi-card:hover { border-color:rgba(255,255,255,0.15); }
+  .kpi-card::before { content:''; position:absolute; top:0; left:0; right:0; height:3px; border-radius:14px 14px 0 0; }
+  .kpi-card.good::before { background:var(--accent); }
+  .kpi-card.warn::before { background:var(--warn); }
+  .kpi-card.danger::before { background:var(--danger); }
+  .kpi-card.neutral::before { background:var(--accent2); }
+  .kpi-label { font-size:11px; font-weight:500; color:var(--muted); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:10px; }
+  .kpi-value { font-size:34px; font-weight:700; font-family:var(--mono); line-height:1; margin-bottom:6px; }
+  .kpi-unit { font-size:13px; font-weight:400; color:var(--muted); margin-left:3px; }
+  .kpi-sub { font-size:12px; color:var(--muted); }
+  .kpi-card.good .kpi-value { color:var(--accent); }
+  .kpi-card.warn .kpi-value { color:var(--warn); }
+  .kpi-card.danger .kpi-value { color:var(--danger); }
+  .kpi-card.neutral .kpi-value { color:var(--accent2); }
+  .kpi-icon { position:absolute; top:18px; right:18px; font-size:20px; opacity:0.12; }
+
+  /* CHARTS */
+  .charts-grid { display:grid; grid-template-columns:2fr 1fr; gap:20px; margin-bottom:32px; }
+  .chart-card { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:24px; }
+  .chart-title { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:20px; }
+
+  /* TABLA */
+  .table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; margin-bottom:32px; }
+  table { width:100%; border-collapse:collapse; }
+  th { text-align:left; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.7px; padding:12px 18px; border-bottom:1px solid var(--border); }
+  td { padding:14px 18px; border-bottom:1px solid var(--border); font-size:13px; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:var(--surface2); }
+  .mono { font-family:var(--mono); font-size:13px; }
+  .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; font-family:var(--mono); }
+  .badge.good { background:rgba(0,229,160,0.12); color:var(--accent); }
+  .badge.warn { background:rgba(255,184,0,0.12); color:var(--warn); }
+  .badge.danger { background:rgba(255,71,87,0.12); color:var(--danger); }
+  .badge.offline { background:rgba(107,127,148,0.15); color:var(--muted); }
+
+  /* MAPA */
+  .map-wrapper { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:28px; margin-bottom:32px; }
+  .map-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+  .map-legend { display:flex; gap:18px; font-size:12px; color:var(--muted); }
+  .legend-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:5px; vertical-align:middle; }
+
+  /* ALERTAS */
+  .alerts-list { display:flex; flex-direction:column; gap:12px; margin-bottom:32px; }
+  .alert-item { display:flex; align-items:flex-start; gap:16px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px 20px; border-left-width:3px; }
+  .alert-item.danger { border-left-color:var(--danger); }
+  .alert-item.warn { border-left-color:var(--warn); }
+  .alert-item.good { border-left-color:var(--accent); }
+  .alert-icon { font-size:18px; flex-shrink:0; margin-top:2px; }
+  .alert-body { flex:1; }
+  .alert-title { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .alert-desc { font-size:13px; color:var(--muted); line-height:1.5; }
+  .alert-meta { font-size:11px; color:var(--muted); font-family:var(--mono); margin-top:6px; }
+  .alert-badge { flex-shrink:0; padding:4px 12px; border-radius:20px; font-size:11px; font-weight:600; align-self:flex-start; }
+  .alert-badge.danger { background:rgba(255,71,87,0.12); color:var(--danger); }
+  .alert-badge.warn { background:rgba(255,184,0,0.12); color:var(--warn); }
+  .alert-badge.good { background:rgba(0,229,160,0.12); color:var(--accent); }
+
+  footer { text-align:center; padding:28px 40px; border-top:1px solid var(--border); font-size:11px; color:var(--muted); font-family:var(--mono); }
+
+  @media(max-width:768px) {
+    header { padding:14px 20px; }
+    section { padding:24px 20px; }
+    .charts-grid { grid-template-columns:1fr; }
+    .kpi-grid { grid-template-columns:repeat(2,1fr); }
+    nav a { padding:6px 10px; font-size:12px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌿</div>
+    <div class="logo-text">Eco<span>Monitor</span></div>
+  </div>
+  <nav>
+    <a class="active" onclick="showSection('resumen',this)">Resumen</a>
+    <a onclick="showSection('mapa',this)">Mapa</a>
+    <a onclick="showSection('alertas',this)">Alertas <span id="alert-count" style="background:var(--danger);color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:2px;display:none">0</span></a>
+  </nav>
+  <div class="header-right">
+    <div class="dot-live"></div>
+    <span class="status-text" id="status-text">Cargando...</span>
+  </div>
+</header>
+
+<!-- RESUMEN -->
+<section id="resumen" class="active">
+  <h2>Calidad del aire — Ciudad</h2>
+  <p class="subtitle" id="subtitle-fecha">Cargando datos desde AWS...</p>
+  <div id="resumen-content">
+    <div class="loading"><div class="spinner"></div> Conectando con AWS IoT...</div>
+  </div>
+</section>
+
+<!-- MAPA -->
+<section id="mapa">
+  <h2>Mapa de ubicaciones</h2>
+  <p class="subtitle">Estado actual de los sensores desplegados en la ciudad</p>
+  <div class="map-wrapper">
+    <div class="map-header">
+      <div class="chart-title" style="margin:0">Sensores activos</div>
+      <div class="map-legend">
+        <span><span class="legend-dot" style="background:var(--accent)"></span>Bueno (&lt;800 ppm)</span>
+        <span><span class="legend-dot" style="background:var(--warn)"></span>Moderado (800–1000)</span>
+        <span><span class="legend-dot" style="background:var(--danger)"></span>Alerta (&gt;1000)</span>
+      </div>
+    </div>
+    <div id="mapa-content">
+      <div class="loading"><div class="spinner"></div> Cargando sensores...</div>
+    </div>
+  </div>
+  <div id="tabla-content">
+    <div class="loading"><div class="spinner"></div></div>
+  </div>
+</section>
+
+<!-- ALERTAS -->
+<section id="alertas">
+  <h2>Alertas activas</h2>
+  <p class="subtitle">Generadas automáticamente a partir de los umbrales definidos en CloudWatch Alarms</p>
+  <div id="alertas-content">
+    <div class="loading"><div class="spinner"></div> Analizando datos...</div>
+  </div>
+</section>
+
+<footer>
+  EcoMonitor © 2026 · AWS IoT Core + Lambda + DynamoDB + CloudWatch + SNS · eu-north-1
+</footer>
+
+<script>
+const API_URL = 'https://cndom91gu7.execute-api.eu-north-1.amazonaws.com/prod/datos';
+
+// Umbrales
+const UMBRAL_CO2_ALERTA   = 1000;
+const UMBRAL_CO2_WARN     = 800;
+const UMBRAL_TEMP_ALERTA  = 35;
+const UMBRAL_TEMP_WARN    = 27;
+const UMBRAL_HUM_ALERTA   = 80;
+
+// Posiciones en el mapa SVG para cada ubicación
+const MAPA_POS = {
+  hospital:    { x: 120, y: 130, label: 'Hospital' },
+  escuela:     { x: 300, y: 90,  label: 'Escuela' },
+  centro:      { x: 350, y: 220, label: 'Centro' },
+  residencial: { x: 160, y: 290, label: 'Residencial' },
+  plaza:       { x: 490, y: 150, label: 'Plaza' },
+  industrial:  { x: 560, y: 300, label: 'Industrial' },
+  parque:      { x: 270, y: 320, label: 'Parque' },
+};
+
+let datosActuales = [];
+let chartCO2 = null;
+let chartDonut = null;
+
+function getEstado(co2) {
+  if (co2 > UMBRAL_CO2_ALERTA) return 'danger';
+  if (co2 > UMBRAL_CO2_WARN)   return 'warn';
+  return 'good';
+}
+function getColor(estado) {
+  return estado === 'danger' ? '#ff4757' : estado === 'warn' ? '#ffb800' : '#00e5a0';
+}
+function getEstadoLabel(estado) {
+  return estado === 'danger' ? 'Alerta' : estado === 'warn' ? 'Moderado' : 'Bueno';
+}
+function tsToHora(ts) {
+  const d = new Date(parseInt(ts) * 1000);
+  return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+}
+function now() {
+  return new Date().toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+async function fetchDatos() {
+  try {
+    const res = await fetch(API_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const datos = await res.json();
+    datosActuales = datos;
+    renderAll();
+    document.getElementById('status-text').textContent = 'Actualizado ' + now();
+  } catch (err) {
+    document.getElementById('status-text').textContent = 'Error de conexión';
+    document.getElementById('resumen-content').innerHTML =
+      '<div class="error-msg">⚠ No se pudieron cargar los datos: ' + err.message + '</div>';
+  }
+}
+
+function renderAll() {
+  renderResumen();
+  renderMapa();
+  renderTabla();
+  renderAlertas();
+}
+
+// ---- RESUMEN ----
+function renderResumen() {
+  if (!datosActuales.length) return;
+  const co2s  = datosActuales.map(d => d.co2);
+  const temps = datosActuales.map(d => d.temperatura);
+  const hums  = datosActuales.map(d => d.humedad);
+  const co2Avg = (co2s.reduce((a,b)=>a+b,0)/co2s.length).toFixed(0);
+  const co2Max = Math.max(...co2s);
+  const tempAvg = (temps.reduce((a,b)=>a+b,0)/temps.length).toFixed(1);
+  const humAvg  = (hums.reduce((a,b)=>a+b,0)/hums.length).toFixed(0);
+  const estMax  = getEstado(co2Max);
+  const ubicMax = datosActuales.find(d=>d.co2===co2Max)?.ubicacion || '';
+
+  document.getElementById('subtitle-fecha').textContent =
+    'Monitorización en tiempo real · ' + datosActuales.length + ' sensores activos · ' + now();
+
+  const estadoAvg = getEstado(parseFloat(co2Avg));
+
+  document.getElementById('resumen-content').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi-card ${estadoAvg}">
+        <div class="kpi-icon">💨</div>
+        <div class="kpi-label">CO₂ promedio</div>
+        <div class="kpi-value">${co2Avg}<span class="kpi-unit">ppm</span></div>
+        <div class="kpi-sub">${datosActuales.length} sensores activos</div>
+      </div>
+      <div class="kpi-card ${getEstado(parseFloat(tempAvg))}">
+        <div class="kpi-icon">🌡️</div>
+        <div class="kpi-label">Temperatura media</div>
+        <div class="kpi-value">${tempAvg}<span class="kpi-unit">°C</span></div>
+        <div class="kpi-sub">${parseFloat(tempAvg) > UMBRAL_TEMP_WARN ? '⚠ Elevada' : 'Rango normal'}</div>
+      </div>
+      <div class="kpi-card neutral">
+        <div class="kpi-icon">💧</div>
+        <div class="kpi-label">Humedad media</div>
+        <div class="kpi-value">${humAvg}<span class="kpi-unit">%</span></div>
+        <div class="kpi-sub">${parseFloat(humAvg) > UMBRAL_HUM_ALERTA ? '⚠ Alta' : 'Nivel confortable'}</div>
+      </div>
+      <div class="kpi-card ${estMax}">
+        <div class="kpi-icon">🏭</div>
+        <div class="kpi-label">CO₂ máx. detectado</div>
+        <div class="kpi-value">${co2Max}<span class="kpi-unit">ppm</span></div>
+        <div class="kpi-sub">${co2Max > UMBRAL_CO2_ALERTA ? '⚠ ' : ''}${ubicMax}</div>
+      </div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-title">CO₂ por ubicación (última lectura)</div>
+        <canvas id="chart-co2" height="200"></canvas>
+      </div>
+      <div class="chart-card">
+        <div class="chart-title">Distribución de estados</div>
+        <canvas id="chart-donut" height="200"></canvas>
+      </div>
+    </div>
+  `;
+
+  // Chart barras CO2
+  const labels = datosActuales.map(d => d.ubicacion);
+  const values = datosActuales.map(d => d.co2);
+  const colors = datosActuales.map(d => getColor(getEstado(d.co2)));
+
+  const ctxBar = document.getElementById('chart-co2').getContext('2d');
+  new Chart(ctxBar, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'CO₂ (ppm)',
+        data: values,
+        backgroundColor: colors.map(c => c + '99'),
+        borderColor: colors,
+        borderWidth: 1.5,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: false },
+        annotation: {}
+      },
+      scales: {
+        x: { ticks: { color:'#6b7f94', font:{ family:'DM Mono', size:11 } }, grid:{ color:'rgba(255,255,255,0.04)' } },
+        y: { ticks: { color:'#6b7f94', font:{ family:'DM Mono', size:11 } }, grid:{ color:'rgba(255,255,255,0.04)' },
+             min: 0 }
+      }
+    }
+  });
+
+  // Chart donut
+  const nBueno   = datosActuales.filter(d=>getEstado(d.co2)==='good').length;
+  const nModerado= datosActuales.filter(d=>getEstado(d.co2)==='warn').length;
+  const nAlerta  = datosActuales.filter(d=>getEstado(d.co2)==='danger').length;
+  const ctxD = document.getElementById('chart-donut').getContext('2d');
+  new Chart(ctxD, {
+    type: 'doughnut',
+    data: {
+      labels: ['Bueno','Moderado','Alerta'],
+      datasets: [{ data:[nBueno,nModerado,nAlerta], backgroundColor:['#00e5a0','#ffb800','#ff4757'], borderWidth:0, hoverOffset:6 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:true, cutout:'68%',
+      plugins: { legend:{ position:'bottom', labels:{ color:'#6b7f94', font:{ family:'Space Grotesk', size:11 }, boxWidth:10, padding:14 } } }
+    }
+  });
+
+  // Badge alertas en nav
+  const nAlertas = datosActuales.filter(d => getEstado(d.co2)==='danger' || d.temperatura > UMBRAL_TEMP_WARN).length;
+  const badge = document.getElementById('alert-count');
+  if (nAlertas > 0) { badge.style.display='inline'; badge.textContent=nAlertas; }
+  else { badge.style.display='none'; }
+}
+
+// ---- MAPA SVG ----
+function renderMapa() {
+  let circles = '';
+  datosActuales.forEach(d => {
+    const pos = MAPA_POS[d.ubicacion];
+    if (!pos) return;
+    const estado = getEstado(d.co2);
+    const color  = getColor(estado);
+    const r = estado === 'danger' ? 22 : 18;
+    circles += `
+      <circle cx="${pos.x}" cy="${pos.y}" r="${r}" fill="${color}22" stroke="${color}" stroke-width="1.5"/>
+      <circle cx="${pos.x}" cy="${pos.y}" r="8" fill="${color}"/>
+      ${estado === 'danger' ? `<circle cx="${pos.x}" cy="${pos.y}" r="30" fill="none" stroke="${color}" stroke-width="0.5" opacity="0.4"><animate attributeName="r" values="22;38;22" dur="2s" repeatCount="indefinite"/><animate attributeName="opacity" values="0.4;0;0.4" dur="2s" repeatCount="indefinite"/></circle>` : ''}
+      <text x="${pos.x}" y="${pos.y - r - 8}" text-anchor="middle" font-size="11" fill="${color}" font-family="Space Grotesk" font-weight="600">${pos.label}</text>
+      <text x="${pos.x}" y="${pos.y + r + 14}" text-anchor="middle" font-size="10" fill="#6b7f94" font-family="DM Mono">${d.co2} ppm</text>
+    `;
+  });
+
+  // ubicaciones sin datos
+  Object.entries(MAPA_POS).forEach(([key, pos]) => {
+    if (!datosActuales.find(d => d.ubicacion === key)) {
+      circles += `
+        <circle cx="${pos.x}" cy="${pos.y}" r="16" fill="#1a2330" stroke="#2a3d52" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="${pos.x}" y="${pos.y - 24}" text-anchor="middle" font-size="11" fill="#2a3d52" font-family="Space Grotesk">${pos.label}</text>
+        <text x="${pos.x}" y="${pos.y + 30}" text-anchor="middle" font-size="10" fill="#2a3d52" font-family="DM Mono">sin datos</text>
+      `;
+    }
+  });
+
+  document.getElementById('mapa-content').innerHTML = `
+    <svg width="100%" viewBox="0 0 680 420" xmlns="http://www.w3.org/2000/svg">
+      <rect width="680" height="420" fill="#0f1823" rx="8"/>
+      <line x1="0" y1="210" x2="680" y2="210" stroke="#1e2d3d" stroke-width="16"/>
+      <line x1="340" y1="0" x2="340" y2="420" stroke="#1e2d3d" stroke-width="16"/>
+      <line x1="0" y1="105" x2="680" y2="105" stroke="#1a2535" stroke-width="7"/>
+      <line x1="0" y1="315" x2="680" y2="315" stroke="#1a2535" stroke-width="7"/>
+      <line x1="170" y1="0" x2="170" y2="420" stroke="#1a2535" stroke-width="7"/>
+      <line x1="510" y1="0" x2="510" y2="420" stroke="#1a2535" stroke-width="7"/>
+      <rect x="20" y="20" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="200" y="20" width="110" height="60" rx="4" fill="#131f2e"/>
+      <rect x="360" y="20" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="530" y="20" width="130" height="60" rx="4" fill="#131f2e"/>
+      <rect x="20" y="120" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="200" y="120" width="110" height="60" rx="4" fill="#0d2918"/>
+      <rect x="360" y="120" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="530" y="120" width="130" height="60" rx="4" fill="#131f2e"/>
+      <rect x="20" y="230" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="200" y="230" width="110" height="60" rx="4" fill="#131f2e"/>
+      <rect x="360" y="230" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="530" y="230" width="130" height="60" rx="4" fill="#131f2e"/>
+      <rect x="20" y="340" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="200" y="340" width="110" height="60" rx="4" fill="#131f2e"/>
+      <rect x="360" y="340" width="120" height="60" rx="4" fill="#131f2e"/>
+      <rect x="530" y="340" width="130" height="60" rx="4" fill="#131f2e"/>
+      ${circles}
+      <text x="340" y="410" text-anchor="middle" font-size="10" fill="#1e2d3d" font-family="Space Grotesk">EcoMonitor · datos en tiempo real</text>
+    </svg>
+  `;
+}
+
+// ---- TABLA ----
+function renderTabla() {
+  const filas = datosActuales.map(d => {
+    const estado = getEstado(d.co2);
+    return `<tr>
+      <td><strong>${MAPA_POS[d.ubicacion]?.label || d.ubicacion}</strong></td>
+      <td class="mono" style="color:${getColor(estado)}">${d.co2}</td>
+      <td class="mono">${d.temperatura}</td>
+      <td class="mono">${d.humedad}</td>
+      <td><span class="badge ${estado}">${getEstadoLabel(estado)}</span></td>
+      <td class="mono" style="color:var(--muted)">${tsToHora(d.timestamp)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('tabla-content').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Ubicación</th><th>CO₂ (ppm)</th><th>Temp (°C)</th><th>Humedad (%)</th><th>Estado</th><th>Última lectura</th>
+        </tr></thead>
+        <tbody>${filas}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ---- ALERTAS ----
+function renderAlertas() {
+  const alertas = [];
+
+  datosActuales.forEach(d => {
+    const loc = MAPA_POS[d.ubicacion]?.label || d.ubicacion;
+    if (d.co2 > UMBRAL_CO2_ALERTA) {
+      alertas.push({ tipo:'danger', icono:'🔴', titulo:`CO₂ crítico — ${loc}`,
+        desc:`Nivel de CO₂ de ${d.co2} ppm, superando el umbral de ${UMBRAL_CO2_ALERTA} ppm. Notificación enviada vía Amazon SNS.`,
+        meta:`CloudWatch Alarms · AlarmaCO2Alto · ${tsToHora(d.timestamp)}`, badge:'CRÍTICO' });
+    } else if (d.co2 > UMBRAL_CO2_WARN) {
+      alertas.push({ tipo:'warn', icono:'🟡', titulo:`CO₂ moderado — ${loc}`,
+        desc:`Nivel de CO₂ de ${d.co2} ppm, próximo al umbral de alerta (${UMBRAL_CO2_ALERTA} ppm). Se recomienda ventilación.`,
+        meta:`CloudWatch Alarms · AlarmaCO2Moderado · ${tsToHora(d.timestamp)}`, badge:'ADVERTENCIA' });
+    }
+    if (d.temperatura > UMBRAL_TEMP_ALERTA) {
+      alertas.push({ tipo:'danger', icono:'🔴', titulo:`Temperatura extrema — ${loc}`,
+        desc:`Temperatura de ${d.temperatura} °C, superando el umbral de ${UMBRAL_TEMP_ALERTA} °C. Posible ola de calor.`,
+        meta:`CloudWatch Alarms · AlarmaTemperaturaAlta · ${tsToHora(d.timestamp)}`, badge:'CRÍTICO' });
+    } else if (d.temperatura > UMBRAL_TEMP_WARN) {
+      alertas.push({ tipo:'warn', icono:'🟡', titulo:`Temperatura elevada — ${loc}`,
+        desc:`Temperatura de ${d.temperatura} °C, por encima del umbral de advertencia (${UMBRAL_TEMP_WARN} °C).`,
+        meta:`CloudWatch Alarms · AlarmaTemperaturaAlta · ${tsToHora(d.timestamp)}`, badge:'ADVERTENCIA' });
+    }
+  });
+
+  if (alertas.length === 0) {
+    alertas.push({ tipo:'good', icono:'🟢', titulo:'Todos los sensores en rango normal',
+      desc:'No se han detectado valores fuera de los umbrales definidos. El sistema está operativo y monitorizando correctamente.',
+      meta:`Última comprobación: ${now()}`, badge:'OK' });
+  }
+
+  document.getElementById('alertas-content').innerHTML = `
+    <div class="alerts-list">
+      ${alertas.map(a => `
+        <div class="alert-item ${a.tipo}">
+          <div class="alert-icon">${a.icono}</div>
+          <div class="alert-body">
+            <div class="alert-title">${a.titulo}</div>
+            <div class="alert-desc">${a.desc}</div>
+            <div class="alert-meta">${a.meta}</div>
+          </div>
+          <div class="alert-badge ${a.tipo}">${a.badge}</div>
+        </div>`).join('')}
+    </div>
+  `;
+}
+
+// NAV
+function showSection(id, el) {
+  document.querySelectorAll('section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if (el) el.classList.add('active');
+}
+
+// INIT
+fetchDatos();
+setInterval(fetchDatos, 60000);
+</script>
+</body>
+</html>
